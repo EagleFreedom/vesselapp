@@ -1,3 +1,5 @@
+"use client";
+
 import {
   Bell,
   CalendarDays,
@@ -8,6 +10,7 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
 type Property = {
@@ -30,6 +33,22 @@ type ServiceLog = {
   service_description: string | null;
 };
 
+type FormState = {
+  service_type: string;
+  service_provider: string;
+  service_date: string;
+  cost: string;
+  service_description: string;
+};
+
+const initialForm: FormState = {
+  service_type: "Roof",
+  service_provider: "",
+  service_date: "",
+  cost: "",
+  service_description: "",
+};
+
 function formatCurrency(value: number | null) {
   if (value === null) return "$0";
 
@@ -50,26 +69,88 @@ function formatDate(date: string | null) {
   });
 }
 
-export default async function HomePage() {
-  const { data: property, error: propertyError } = await supabase
-    .from("properties")
-    .select("*")
-    .limit(1)
-    .maybeSingle();
+export default function HomePage() {
+  const [property, setProperty] = useState<Property | null>(null);
+  const [serviceLogs, setServiceLogs] = useState<ServiceLog[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [form, setForm] = useState<FormState>(initialForm);
+  const [loading, setLoading] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
 
-  let serviceLogs: ServiceLog[] = [];
+  useEffect(() => {
+    const loadData = async () => {
+      setLoading(true);
 
-  if (property?.id) {
+      const { data: propertyData, error: propertyError } = await supabase
+        .from("properties")
+        .select("*")
+        .limit(1)
+        .maybeSingle();
+
+      if (!propertyError && propertyData) {
+        setProperty(propertyData as Property);
+
+        const { data: logsData, error: logsError } = await supabase
+          .from("service_logs")
+          .select("*")
+          .eq("property_id", propertyData.id)
+          .order("service_date", { ascending: false });
+
+        if (!logsError) {
+          setServiceLogs((logsData ?? []) as ServiceLog[]);
+        }
+      }
+
+      setLoading(false);
+    };
+
+    loadData();
+  }, []);
+
+  const timelineEntries = useMemo(
+    () =>
+      serviceLogs.map((entry, index) => ({
+        id: entry.id,
+        type: entry.service_type,
+        date: formatDate(entry.service_date),
+        provider: entry.service_provider ?? "Provider",
+        cost: formatCurrency(entry.cost),
+        description: entry.service_description ?? "No description provided.",
+        tone: ["blue", "green", "cyan"][index % 3],
+      })),
+    [serviceLogs]
+  );
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!property) return;
+
+    setSubmitting(true);
+
+    const payload = {
+      property_id: property.id,
+      service_type: form.service_type,
+      service_provider: form.service_provider,
+      service_date: form.service_date,
+      cost: form.cost ? Number(form.cost) : 0,
+      service_description: form.service_description,
+    };
+
     const { data, error } = await supabase
       .from("service_logs")
-      .select("*")
-      .eq("property_id", property.id)
-      .order("service_date", { ascending: false });
+      .insert(payload)
+      .select()
+      .single();
 
-    if (!error) {
-      serviceLogs = data ?? [];
+    if (!error && data) {
+      setServiceLogs((prev) => [data as ServiceLog, ...prev]);
+      setForm(initialForm);
+      setIsModalOpen(false);
     }
-  }
+
+    setSubmitting(false);
+  };
 
   const systemCards = [
     { name: "Roof", age: "9 yrs", status: "Good", icon: ShieldCheck, tone: "green" },
@@ -78,17 +159,17 @@ export default async function HomePage() {
     { name: "Electrical", age: "Pending", status: "Review", icon: Wrench, tone: "amber" },
   ];
 
-  const timelineEntries = serviceLogs.map((entry, index) => ({
-    id: entry.id,
-    type: entry.service_type,
-    date: formatDate(entry.service_date),
-    provider: entry.service_provider ?? "Provider",
-    cost: formatCurrency(entry.cost),
-    description: entry.service_description ?? "No description provided.",
-    tone: ["blue", "green", "cyan"][index % 3],
-  }));
+  if (loading) {
+    return (
+      <main className="min-h-screen bg-slate-100 p-8 text-slate-900">
+        <div className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          <h1 className="text-2xl font-semibold">Loading home health overview...</h1>
+        </div>
+      </main>
+    );
+  }
 
-  if (propertyError || !property) {
+  if (!property) {
     return (
       <main className="min-h-screen bg-slate-100 p-8 text-slate-900">
         <div className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
@@ -159,8 +240,8 @@ export default async function HomePage() {
                 </p>
               </div>
               <div className="rounded-2xl bg-white/5 p-4 backdrop-blur-sm">
-                <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Warranty</p>
-                <p className="mt-3 text-2xl font-semibold">{timelineEntries.length} docs</p>
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Services Logged</p>
+                <p className="mt-3 text-2xl font-semibold">{serviceLogs.length}</p>
               </div>
             </div>
           </div>
@@ -188,19 +269,17 @@ export default async function HomePage() {
             <div className="mt-6 space-y-4">
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span className="text-sm text-slate-600">Routine maintenance</span>
-                <span className="font-medium text-slate-900">{timelineEntries.length} updates</span>
+                <span className="font-medium text-slate-900">{serviceLogs.length} updates</span>
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span className="text-sm text-slate-600">Overdue items</span>
                 <span className="font-medium text-amber-600">
-                  {timelineEntries.length > 0 ? "0 review" : "1 review"}
+                  {serviceLogs.length > 0 ? "0 review" : "1 review"}
                 </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span className="text-sm text-slate-600">Documents stored</span>
-                <span className="font-medium text-slate-900">
-                  {timelineEntries.length + 2} files
-                </span>
+                <span className="font-medium text-slate-900">{serviceLogs.length + 2} files</span>
               </div>
             </div>
           </div>
@@ -252,7 +331,10 @@ export default async function HomePage() {
               </p>
               <h3 className="mt-2 text-2xl font-semibold">Maintenance log</h3>
             </div>
-            <button className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800">
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
               Add entry
             </button>
           </div>
@@ -308,6 +390,110 @@ export default async function HomePage() {
           </div>
         </section>
       </div>
+
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="mb-5 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
+                  New service
+                </p>
+                <h3 className="mt-2 text-2xl font-semibold text-slate-900">Add maintenance entry</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsModalOpen(false)}
+                className="rounded-full border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-slate-700">Service type</span>
+                  <select
+                    value={form.service_type}
+                    onChange={(e) => setForm({ ...form, service_type: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none ring-0 focus:border-blue-500"
+                  >
+                    <option value="Roof">Roof</option>
+                    <option value="HVAC">HVAC</option>
+                    <option value="Water Heater">Water Heater</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="General">General</option>
+                  </select>
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-slate-700">Provider</span>
+                  <input
+                    value={form.service_provider}
+                    onChange={(e) => setForm({ ...form, service_provider: e.target.value })}
+                    placeholder="e.g. Summit Roofing Co."
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
+                  />
+                </label>
+              </div>
+
+              <div className="grid gap-4 md:grid-cols-2">
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-slate-700">Service date</span>
+                  <input
+                    type="date"
+                    value={form.service_date}
+                    onChange={(e) => setForm({ ...form, service_date: e.target.value })}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
+                  />
+                </label>
+
+                <label className="block">
+                  <span className="mb-1 block text-sm font-medium text-slate-700">Cost</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.cost}
+                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
+                    placeholder="0.00"
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
+                  />
+                </label>
+              </div>
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-medium text-slate-700">Description</span>
+                <textarea
+                  value={form.service_description}
+                  onChange={(e) => setForm({ ...form, service_description: e.target.value })}
+                  rows={4}
+                  placeholder="Describe what was serviced or repaired."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
+                />
+              </label>
+
+              <div className="flex justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+                >
+                  {submitting ? "Saving..." : "Save entry"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
