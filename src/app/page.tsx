@@ -10,6 +10,7 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabase";
 
@@ -31,22 +32,6 @@ type ServiceLog = {
   service_date: string | null;
   cost: number | null;
   service_description: string | null;
-};
-
-type FormState = {
-  service_type: string;
-  service_provider: string;
-  service_date: string;
-  cost: string;
-  service_description: string;
-};
-
-const initialForm: FormState = {
-  service_type: "Roof",
-  service_provider: "",
-  service_date: "",
-  cost: "",
-  service_description: "",
 };
 
 function formatCurrency(value: number | null) {
@@ -72,10 +57,7 @@ function formatDate(date: string | null) {
 export default function HomePage() {
   const [property, setProperty] = useState<Property | null>(null);
   const [serviceLogs, setServiceLogs] = useState<ServiceLog[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [form, setForm] = useState<FormState>(initialForm);
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -88,12 +70,13 @@ export default function HomePage() {
         .maybeSingle();
 
       if (!propertyError && propertyData) {
-        setProperty(propertyData as Property);
+        const propertyRecord = propertyData as Property;
+        setProperty(propertyRecord);
 
         const { data: logsData, error: logsError } = await supabase
           .from("service_logs")
           .select("*")
-          .eq("property_id", propertyData.id)
+          .eq("property_id", propertyRecord.id)
           .order("service_date", { ascending: false });
 
         if (!logsError) {
@@ -120,37 +103,6 @@ export default function HomePage() {
       })),
     [serviceLogs]
   );
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (!property) return;
-
-    setSubmitting(true);
-
-    const payload = {
-      property_id: property.id,
-      service_type: form.service_type,
-      service_provider: form.service_provider,
-      service_date: form.service_date,
-      cost: form.cost ? Number(form.cost) : 0,
-      service_description: form.service_description,
-    };
-
-    const { data, error } = await supabase
-      .from("service_logs")
-      .insert(payload)
-      .select()
-      .single();
-
-    if (!error && data) {
-      setServiceLogs((prev) => [data as ServiceLog, ...prev]);
-      setForm(initialForm);
-      setIsModalOpen(false);
-    }
-
-    setSubmitting(false);
-  };
 
   const systemCards = [
     { name: "Roof", age: "9 yrs", status: "Good", icon: ShieldCheck, tone: "green" },
@@ -331,12 +283,12 @@ export default function HomePage() {
               </p>
               <h3 className="mt-2 text-2xl font-semibold">Maintenance log</h3>
             </div>
-            <button
-              onClick={() => setIsModalOpen(true)}
+            <Link
+              href="/log/new"
               className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
             >
               Add entry
-            </button>
+            </Link>
           </div>
 
           <div className="space-y-4">
@@ -390,110 +342,6 @@ export default function HomePage() {
           </div>
         </section>
       </div>
-
-      {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">
-                  New service
-                </p>
-                <h3 className="mt-2 text-2xl font-semibold text-slate-900">Add maintenance entry</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsModalOpen(false)}
-                className="rounded-full border border-slate-200 px-2 py-1 text-sm text-slate-500 hover:bg-slate-50"
-              >
-                Close
-              </button>
-            </div>
-
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Service type</span>
-                  <select
-                    value={form.service_type}
-                    onChange={(e) => setForm({ ...form, service_type: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none ring-0 focus:border-blue-500"
-                  >
-                    <option value="Roof">Roof</option>
-                    <option value="HVAC">HVAC</option>
-                    <option value="Water Heater">Water Heater</option>
-                    <option value="Electrical">Electrical</option>
-                    <option value="General">General</option>
-                  </select>
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Provider</span>
-                  <input
-                    value={form.service_provider}
-                    onChange={(e) => setForm({ ...form, service_provider: e.target.value })}
-                    placeholder="e.g. Summit Roofing Co."
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
-                  />
-                </label>
-              </div>
-
-              <div className="grid gap-4 md:grid-cols-2">
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Service date</span>
-                  <input
-                    type="date"
-                    value={form.service_date}
-                    onChange={(e) => setForm({ ...form, service_date: e.target.value })}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-1 block text-sm font-medium text-slate-700">Cost</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={form.cost}
-                    onChange={(e) => setForm({ ...form, cost: e.target.value })}
-                    placeholder="0.00"
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
-                  />
-                </label>
-              </div>
-
-              <label className="block">
-                <span className="mb-1 block text-sm font-medium text-slate-700">Description</span>
-                <textarea
-                  value={form.service_description}
-                  onChange={(e) => setForm({ ...form, service_description: e.target.value })}
-                  rows={4}
-                  placeholder="Describe what was serviced or repaired."
-                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-900 outline-none focus:border-blue-500"
-                />
-              </label>
-
-              <div className="flex justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
-                >
-                  {submitting ? "Saving..." : "Save entry"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </main>
   );
 }
