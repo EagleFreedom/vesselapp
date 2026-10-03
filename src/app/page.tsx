@@ -8,45 +8,99 @@ import {
   Sparkles,
   Wrench,
 } from "lucide-react";
+import { supabase } from "../lib/supabase";
 
-const systemCards = [
-  { name: "Roof", age: "9 yrs", status: "Good", icon: ShieldCheck, tone: "green" },
-  { name: "HVAC", age: "7 yrs", status: "Serviced", icon: Sparkles, tone: "blue" },
-  { name: "Water Heater", age: "6 yrs", status: "Normal", icon: Droplets, tone: "cyan" },
-  { name: "Electrical", age: "Pending", status: "Review", icon: Wrench, tone: "amber" },
-];
+type Property = {
+  id: string;
+  address: string;
+  city: string | null;
+  state: string | null;
+  year_built: number | null;
+  property_type: string | null;
+  created_at: string;
+};
 
-const timelineEntries = [
-  {
-    id: 1,
-    type: "Roof Repair",
-    date: "May 12, 2026",
-    provider: "Summit Roofing Co.",
-    cost: "$2,480",
-    description: "Replaced shingles and inspected flashing after storm damage.",
-    tone: "blue",
-  },
-  {
-    id: 2,
-    type: "HVAC Tune-Up",
-    date: "Mar 04, 2026",
-    provider: "AirCare Heating",
-    cost: "$320",
-    description: "Annual system check, filter replacement, and airflow balancing.",
-    tone: "green",
-  },
-  {
-    id: 3,
-    type: "Water Heater Service",
-    date: "Jan 19, 2026",
-    provider: "Rapid Flow Plumbing",
-    cost: "$185",
-    description: "Pressure relief valve inspection and tank drain maintenance.",
-    tone: "cyan",
-  },
-];
+type ServiceLog = {
+  id: string;
+  property_id: string;
+  service_type: string;
+  service_provider: string | null;
+  service_date: string | null;
+  cost: number | null;
+  service_description: string | null;
+};
 
-export default function HomePage() {
+function formatCurrency(value: number | null) {
+  if (value === null) return "$0";
+
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 0,
+  }).format(value);
+}
+
+function formatDate(date: string | null) {
+  if (!date) return "N/A";
+
+  return new Date(date).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+export default async function HomePage() {
+  const { data: property, error: propertyError } = await supabase
+    .from("properties")
+    .select("*")
+    .limit(1)
+    .maybeSingle();
+
+  let serviceLogs: ServiceLog[] = [];
+
+  if (property?.id) {
+    const { data, error } = await supabase
+      .from("service_logs")
+      .select("*")
+      .eq("property_id", property.id)
+      .order("service_date", { ascending: false });
+
+    if (!error) {
+      serviceLogs = data ?? [];
+    }
+  }
+
+  const systemCards = [
+    { name: "Roof", age: "9 yrs", status: "Good", icon: ShieldCheck, tone: "green" },
+    { name: "HVAC", age: "7 yrs", status: "Serviced", icon: Sparkles, tone: "blue" },
+    { name: "Water Heater", age: "6 yrs", status: "Normal", icon: Droplets, tone: "cyan" },
+    { name: "Electrical", age: "Pending", status: "Review", icon: Wrench, tone: "amber" },
+  ];
+
+  const timelineEntries = serviceLogs.map((entry, index) => ({
+    id: entry.id,
+    type: entry.service_type,
+    date: formatDate(entry.service_date),
+    provider: entry.service_provider ?? "Provider",
+    cost: formatCurrency(entry.cost),
+    description: entry.service_description ?? "No description provided.",
+    tone: ["blue", "green", "cyan"][index % 3],
+  }));
+
+  if (propertyError || !property) {
+    return (
+      <main className="min-h-screen bg-slate-100 p-8 text-slate-900">
+        <div className="mx-auto max-w-2xl rounded-3xl border border-slate-200 bg-white p-8 shadow-sm">
+          <h1 className="text-2xl font-semibold">No property found</h1>
+          <p className="mt-3 text-slate-600">
+            There isn’t a property row available for this user yet.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-slate-100 text-slate-900">
       <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -81,8 +135,10 @@ export default function HomePage() {
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">
                   Property record
                 </p>
-                <h2 className="mt-2 text-3xl font-semibold">742 Cedar Lane</h2>
-                <p className="mt-2 text-sm text-slate-300">Austin, TX</p>
+                <h2 className="mt-2 text-3xl font-semibold">{property.address}</h2>
+                <p className="mt-2 text-sm text-slate-300">
+                  {property.city}, {property.state}
+                </p>
               </div>
               <div className="rounded-full border border-emerald-400/40 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-200">
                 Healthy
@@ -92,15 +148,19 @@ export default function HomePage() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="rounded-2xl bg-white/5 p-4 backdrop-blur-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Age</p>
-                <p className="mt-3 text-2xl font-semibold">14 yrs</p>
+                <p className="mt-3 text-2xl font-semibold">
+                  {property.year_built ? `${new Date().getFullYear() - property.year_built} yrs` : "N/A"}
+                </p>
               </div>
               <div className="rounded-2xl bg-white/5 p-4 backdrop-blur-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Last Service</p>
-                <p className="mt-3 text-2xl font-semibold">Mar 2026</p>
+                <p className="mt-3 text-2xl font-semibold">
+                  {timelineEntries[0]?.date ?? "No service"}
+                </p>
               </div>
               <div className="rounded-2xl bg-white/5 p-4 backdrop-blur-sm">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Warranty</p>
-                <p className="mt-3 text-2xl font-semibold">2 docs</p>
+                <p className="mt-3 text-2xl font-semibold">{timelineEntries.length} docs</p>
               </div>
             </div>
           </div>
@@ -128,15 +188,19 @@ export default function HomePage() {
             <div className="mt-6 space-y-4">
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span className="text-sm text-slate-600">Routine maintenance</span>
-                <span className="font-medium text-slate-900">3 updates</span>
+                <span className="font-medium text-slate-900">{timelineEntries.length} updates</span>
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span className="text-sm text-slate-600">Overdue items</span>
-                <span className="font-medium text-amber-600">1 review</span>
+                <span className="font-medium text-amber-600">
+                  {timelineEntries.length > 0 ? "0 review" : "1 review"}
+                </span>
               </div>
               <div className="flex items-center justify-between rounded-2xl bg-slate-50 p-3">
                 <span className="text-sm text-slate-600">Documents stored</span>
-                <span className="font-medium text-slate-900">11 files</span>
+                <span className="font-medium text-slate-900">
+                  {timelineEntries.length + 2} files
+                </span>
               </div>
             </div>
           </div>
@@ -155,7 +219,17 @@ export default function HomePage() {
                 className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"
               >
                 <div className="mb-4 flex items-center justify-between">
-                  <div className={`flex h-11 w-11 items-center justify-center rounded-xl ${tone === "green" ? "bg-emerald-100 text-emerald-700" : tone === "blue" ? "bg-blue-100 text-blue-700" : tone === "cyan" ? "bg-cyan-100 text-cyan-700" : "bg-amber-100 text-amber-700"}`}>
+                  <div
+                    className={`flex h-11 w-11 items-center justify-center rounded-xl ${
+                      tone === "green"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : tone === "blue"
+                          ? "bg-blue-100 text-blue-700"
+                          : tone === "cyan"
+                            ? "bg-cyan-100 text-cyan-700"
+                            : "bg-amber-100 text-amber-700"
+                    }`}
+                  >
                     <Icon className="h-5 w-5" />
                   </div>
                   <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
@@ -184,47 +258,53 @@ export default function HomePage() {
           </div>
 
           <div className="space-y-4">
-            {timelineEntries.map((entry) => (
-              <div
-                key={entry.id}
-                className="rounded-2xl border border-slate-200 p-4 transition hover:border-slate-300 hover:bg-slate-50"
-              >
-                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-                  <div className="flex items-start gap-4">
-                    <div
-                      className={`mt-1 flex h-10 w-10 items-center justify-center rounded-full ${
-                        entry.tone === "blue"
-                          ? "bg-blue-100 text-blue-700"
-                          : entry.tone === "green"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-cyan-100 text-cyan-700"
-                      }`}
-                    >
-                      <CalendarDays className="h-4 w-4" />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="font-semibold text-slate-900">{entry.type}</p>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.15em] text-slate-600">
-                          {entry.provider}
-                        </span>
-                      </div>
-                      <p className="mt-1 text-sm text-slate-500">{entry.date}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-3">
-                    <span className="text-lg font-semibold text-slate-900">{entry.cost}</span>
-                    <button className="flex items-center gap-1 text-sm font-medium text-blue-700">
-                      View receipt <ChevronRight className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-
-                <p className="mt-4 text-sm leading-6 text-slate-600">{entry.description}</p>
+            {timelineEntries.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-6 text-sm text-slate-500">
+                No maintenance records yet.
               </div>
-            ))}
+            ) : (
+              timelineEntries.map((entry) => (
+                <div
+                  key={entry.id}
+                  className="rounded-2xl border border-slate-200 p-4 transition hover:border-slate-300 hover:bg-slate-50"
+                >
+                  <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div className="flex items-start gap-4">
+                      <div
+                        className={`mt-1 flex h-10 w-10 items-center justify-center rounded-full ${
+                          entry.tone === "blue"
+                            ? "bg-blue-100 text-blue-700"
+                            : entry.tone === "green"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : "bg-cyan-100 text-cyan-700"
+                        }`}
+                      >
+                        <CalendarDays className="h-4 w-4" />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <p className="font-semibold text-slate-900">{entry.type}</p>
+                          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.15em] text-slate-600">
+                            {entry.provider}
+                          </span>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-500">{entry.date}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-semibold text-slate-900">{entry.cost}</span>
+                      <button className="flex items-center gap-1 text-sm font-medium text-blue-700">
+                        View receipt <ChevronRight className="h-4 w-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-6 text-slate-600">{entry.description}</p>
+                </div>
+              ))
+            )}
           </div>
         </section>
       </div>
